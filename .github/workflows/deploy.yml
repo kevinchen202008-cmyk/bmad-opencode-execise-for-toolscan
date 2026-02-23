@@ -23,9 +23,11 @@ jobs:
       - name: Deploy to Alibaba Cloud ECS via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.SERVER_HOST }}     # e.g., 47.100.x.x
-          username: ${{ secrets.SERVER_USER }} # e.g., root
-          key: ${{ secrets.SERVER_SSH_KEY }}   # Private key of the server
+          # Using the exact same secret names from your older repository 
+          # to allow you to easily copy/paste or use Organization secrets.
+          host: ${{ secrets.ALIYUN_ECS_HOST }}
+          username: ${{ secrets.ALIYUN_ECS_USER }}
+          key: ${{ secrets.ALIYUN_ECS_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT || '22' }}
           script: |
             # Navigate to the target directory or create it
