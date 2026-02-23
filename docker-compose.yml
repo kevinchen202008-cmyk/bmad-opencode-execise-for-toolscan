@@ -5,11 +5,14 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: compliance-os:latest
-    container_name: compliance-os-web
+    # Changed image name to avoid conflict with older project
+    image: compliance-os-v2:latest
+    # Changed container name for isolation
+    container_name: compliance-os-v2-web
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      # Map host port 3001 to container port 3000 to avoid conflicts with other apps (like 8080)
+      - "3001:3000"
     environment:
       - NODE_ENV=production
       - DATABASE_URL=file:/app/data/prod.db # Direct SQLite to the mounted volume

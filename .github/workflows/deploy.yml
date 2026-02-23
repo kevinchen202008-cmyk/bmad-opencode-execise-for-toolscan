@@ -29,8 +29,9 @@ jobs:
           port: ${{ secrets.SERVER_PORT || '22' }}
           script: |
             # Navigate to the target directory or create it
-            mkdir -p /opt/compliance-os
-            cd /opt/compliance-os
+            # Isolated directory specifically for this project version
+            mkdir -p /opt/compliance-os-v2
+            cd /opt/compliance-os-v2
             
             # Fetch latest code
             if [ -d ".git" ]; then
