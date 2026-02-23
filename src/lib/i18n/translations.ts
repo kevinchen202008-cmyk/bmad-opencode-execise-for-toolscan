@@ -4,8 +4,7 @@ export const translations = {
     scannerTab: "Scanner",
     repoTab: "Repository",
     newScanTitle: "New Compliance Scan",
-    newScanDesc:
-      "Enter tool names to analyze their terms of service, commercial restrictions, and risks. Separate multiple tools by comma or newline.",
+    newScanDesc: "Enter tool names to analyze their terms of service, commercial restrictions, and risks. Separate multiple tools by comma or newline.",
     placeholder: "e.g. Docker Desktop, Redis, Elasticsearch...",
     analyzeBtn: "Analyze Tools",
     analyzingBtn: "Analyzing via AI...",
@@ -26,29 +25,29 @@ export const translations = {
     updateRepo: "Accept & Update Repository",
     matchesDb: "Matches DB",
     repoTitle: "Tool Repository",
-    repoDesc:
-      "Manage and review previously scanned tools. Ordered alphabetically.",
+    repoDesc: "Manage and review previously scanned tools. Ordered alphabetically.",
     repoEmptyTitle: "Repository is empty",
     repoEmptyDesc: "Scan some tools in the workspace to populate this list.",
     restrictions: "Restrictions",
     risks: "Risks",
     updated: "Updated",
     remove: "Remove",
-    confirmDelete:
-      "Are you sure you want to delete this tool from the repository?",
+    confirmDelete: "Are you sure you want to delete this tool from the repository?",
     unknown: "Unknown",
     none: "None",
     lowRisk: "Low risk.",
     noneSpecified: "None specified.",
     noneFound: "None found.",
+    viewDetails: "View Details",
+    close: "Close",
+    toolDetails: "Tool Details",
   },
   zh: {
     appTitle: "合规OS",
     scannerTab: "扫描工作台",
     repoTab: "工具信息库",
     newScanTitle: "发起合规扫描",
-    newScanDesc:
-      "输入工具名称以分析其服务条款、商业限制和合规风险。多个工具请使用逗号或换行符分隔。",
+    newScanDesc: "输入工具名称以分析其服务条款、商业限制和合规风险。多个工具请使用逗号或换行符分隔。",
     placeholder: "例如：Docker Desktop, Redis, Elasticsearch...",
     analyzeBtn: "开始分析工具",
     analyzingBtn: "AI 智能分析中...",
@@ -82,7 +81,10 @@ export const translations = {
     lowRisk: "低风险。",
     noneSpecified: "未指定。",
     noneFound: "未找到替代方案。",
-  },
+    viewDetails: "查看详情",
+    close: "关闭",
+    toolDetails: "工具详情报告",
+  }
 };
 
 export type Language = keyof typeof translations;

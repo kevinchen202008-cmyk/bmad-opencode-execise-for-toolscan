@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Loader2, Search, Trash2, CheckCircle, AlertTriangle, Info, ArrowRight, ShieldCheck, Database, RefreshCw, Languages } from "lucide-react";
+import { Loader2, Search, Trash2, CheckCircle, AlertTriangle, Info, ArrowRight, ShieldCheck, Database, RefreshCw, Languages, X, ChevronRight } from "lucide-react";
 import { useLangStore } from "@/store/langStore";
 import { translations } from "@/lib/i18n/translations";
 
@@ -47,6 +47,7 @@ export default function Home() {
   // Repo State
   const [savedTools, setSavedTools] = useState<SavedTool[]>([]);
   const [isLoadingRepo, setIsLoadingRepo] = useState(false);
+  const [selectedTool, setSelectedTool] = useState<SavedTool | null>(null);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -148,22 +149,24 @@ export default function Home() {
     setScanResults((prev) => prev.filter((r) => r.name !== name));
   };
 
-  const handleDeleteTool = async (id: string) => {
+  const handleDeleteTool = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent opening drawer
     if (!confirm(t.confirmDelete)) return;
     try {
       const res = await fetch(`/api/tools/${id}`, { method: "DELETE" });
       if (res.ok) {
         setSavedTools((prev) => prev.filter((tool) => tool.id !== id));
+        if (selectedTool?.id === id) setSelectedTool(null);
       }
     } catch (err) {
       console.error("Failed to delete tool:", err);
     }
   };
 
-  if (!mounted) return null; // Prevent hydration mismatch
+  if (!mounted) return null;
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-indigo-100 selection:text-indigo-900">
+    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-indigo-100 selection:text-indigo-900 relative">
       <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16 items-center">
@@ -200,7 +203,6 @@ export default function Home() {
                 </button>
               </div>
 
-              {/* Language Switcher */}
               <button 
                 onClick={toggleLang}
                 className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-full transition-colors flex items-center space-x-1"
@@ -219,6 +221,7 @@ export default function Home() {
         {/* Workspace: Scanner */}
         {activeTab === "scan" && (
           <div className="space-y-8 animate-in fade-in duration-300">
+            {/* Same scanner code... */}
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
               <h2 className="text-lg font-semibold text-slate-900 mb-2">{t.newScanTitle}</h2>
               <p className="text-sm text-slate-500 mb-4">{t.newScanDesc}</p>
@@ -260,7 +263,6 @@ export default function Home() {
               )}
             </div>
 
-            {/* Scan Results */}
             {scanResults.length > 0 && (
               <div className="space-y-6">
                 <h3 className="text-lg font-semibold text-slate-900 flex items-center">
@@ -325,7 +327,6 @@ export default function Home() {
                           </div>
                         </div>
 
-                        {/* Diff Viewer */}
                         {result.hasDifferences && result.differences && (
                           <div className="mb-6 bg-amber-50 rounded-lg p-4 border border-amber-100">
                             <h5 className="text-sm font-semibold text-amber-800 mb-3 flex items-center">
@@ -421,15 +422,26 @@ export default function Home() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {savedTools.map((tool) => (
-                  <div key={tool.id} className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col group hover:shadow-md hover:border-indigo-200 transition-all">
-                    <div className="flex justify-between items-start mb-4">
-                      <div className="flex-1 pr-4">
+                  <div 
+                    key={tool.id} 
+                    onClick={() => setSelectedTool(tool)}
+                    className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col group hover:shadow-md hover:border-indigo-300 transition-all cursor-pointer relative overflow-hidden"
+                  >
+                    <div className="absolute top-0 right-0 p-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <ChevronRight className="w-5 h-5 text-indigo-400" />
+                    </div>
+                    
+                    <div className="flex justify-between items-start mb-4 pr-6">
+                      <div className="flex-1 pr-2">
                         <h4 className="font-bold text-slate-900 text-lg truncate" title={tool.name}>{tool.name}</h4>
                         <p className="text-xs text-slate-500 mt-0.5 truncate" title={`${tool.version} • ${tool.company}`}>
                           v{tool.version} • {tool.company || t.unknown}
                         </p>
                       </div>
-                      <span className="inline-flex items-center justify-center px-2 py-1 rounded text-xs font-semibold bg-slate-100 text-slate-700 max-w-[120px] truncate" title={tool.license}>
+                    </div>
+
+                    <div className="mb-4">
+                       <span className="inline-flex items-center px-2.5 py-1 rounded text-xs font-semibold bg-slate-100 text-slate-700 w-fit">
                         {tool.license}
                       </span>
                     </div>
@@ -439,13 +451,13 @@ export default function Home() {
                         <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1 flex items-center">
                           <Info className="w-3 h-3 mr-1" /> {t.restrictions}
                         </p>
-                        <p className="text-sm text-slate-700 line-clamp-2 leading-relaxed" title={tool.usage_restrictions}>{tool.usage_restrictions || t.none}</p>
+                        <p className="text-sm text-slate-700 line-clamp-2 leading-relaxed">{tool.usage_restrictions || t.none}</p>
                       </div>
                       <div>
                         <p className="text-xs font-semibold text-red-400 uppercase tracking-wider mb-1 flex items-center">
                           <AlertTriangle className="w-3 h-3 mr-1 text-red-400" /> {t.risks}
                         </p>
-                        <p className="text-sm text-slate-700 line-clamp-3 leading-relaxed" title={tool.risk_analysis}>{tool.risk_analysis || t.none}</p>
+                        <p className="text-sm text-slate-700 line-clamp-2 leading-relaxed">{tool.risk_analysis || t.none}</p>
                       </div>
                     </div>
 
@@ -454,7 +466,7 @@ export default function Home() {
                         {t.updated} {new Date(tool.updated_at).toLocaleDateString()}
                       </p>
                       <button
-                        onClick={() => handleDeleteTool(tool.id)}
+                        onClick={(e) => handleDeleteTool(tool.id, e)}
                         className="text-slate-400 hover:text-red-600 transition-colors p-1.5 rounded-md hover:bg-red-50 flex items-center space-x-1"
                         title={t.remove}
                       >
@@ -469,6 +481,96 @@ export default function Home() {
           </div>
         )}
       </main>
+
+      {/* Slide-over Drawer for Tool Details */}
+      {selectedTool && (
+        <div className="fixed inset-0 z-50 overflow-hidden" aria-labelledby="slide-over-title" role="dialog" aria-modal="true">
+          {/* Backdrop */}
+          <div 
+            className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity" 
+            onClick={() => setSelectedTool(null)}
+            aria-hidden="true"
+          ></div>
+
+          <div className="pointer-events-none fixed inset-y-0 right-0 flex max-w-full pl-10 sm:pl-16">
+            <div className="pointer-events-auto w-screen max-w-md transform transition duration-500 ease-in-out sm:duration-700">
+              <div className="flex h-full flex-col overflow-y-scroll bg-white shadow-2xl">
+                
+                {/* Drawer Header */}
+                <div className="px-4 py-6 sm:px-6 bg-slate-50 border-b border-slate-200">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <h2 className="text-2xl font-bold text-slate-900" id="slide-over-title">{selectedTool.name}</h2>
+                      <p className="text-sm text-slate-500 mt-1 font-mono">v{selectedTool.version}</p>
+                    </div>
+                    <div className="ml-3 flex h-7 items-center">
+                      <button
+                        type="button"
+                        className="rounded-md bg-slate-50 text-slate-400 hover:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-colors"
+                        onClick={() => setSelectedTool(null)}
+                      >
+                        <span className="sr-only">{t.close}</span>
+                        <X className="h-6 w-6" aria-hidden="true" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Drawer Content */}
+                <div className="relative flex-1 px-4 py-6 sm:px-6 space-y-8">
+                  {/* Basic Info */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                      <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">{t.company}</p>
+                      <p className="text-sm font-medium text-slate-900">{selectedTool.company || t.unknown}</p>
+                    </div>
+                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                      <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">{t.licenseType}</p>
+                      <p className="text-sm font-medium text-slate-900">{selectedTool.license || t.unknown}</p>
+                    </div>
+                  </div>
+
+                  {/* Detailed Sections */}
+                  <div className="space-y-6">
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900 mb-2 border-b border-slate-200 pb-2">{t.usageRestrictions}</h3>
+                      <div className="prose prose-sm prose-slate text-slate-600 whitespace-pre-wrap">
+                        {selectedTool.usage_restrictions || t.noneSpecified}
+                      </div>
+                    </div>
+
+                    <div>
+                      <h3 className="text-sm font-bold text-red-600 mb-2 border-b border-red-100 pb-2 flex items-center">
+                        <AlertTriangle className="w-4 h-4 mr-1.5" />
+                        {t.riskAnalysis}
+                      </h3>
+                      <div className="prose prose-sm prose-slate text-slate-600 whitespace-pre-wrap">
+                        {selectedTool.risk_analysis || t.lowRisk}
+                      </div>
+                    </div>
+
+                    <div>
+                      <h3 className="text-sm font-bold text-emerald-600 mb-2 border-b border-emerald-100 pb-2 flex items-center">
+                        <CheckCircle className="w-4 h-4 mr-1.5" />
+                        {t.alternativeSolutions}
+                      </h3>
+                      <div className="prose prose-sm prose-slate text-slate-600 whitespace-pre-wrap">
+                        {selectedTool.alternative_solutions || t.noneFound}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Drawer Footer */}
+                <div className="px-4 py-4 sm:px-6 bg-slate-50 border-t border-slate-200 text-xs text-slate-400 flex justify-between items-center">
+                  <span>ID: {selectedTool.id.substring(0, 8)}</span>
+                  <span>{t.updated} {new Date(selectedTool.updated_at).toLocaleString()}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
