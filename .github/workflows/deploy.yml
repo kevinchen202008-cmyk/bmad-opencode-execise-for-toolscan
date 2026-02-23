@@ -1,0 +1,53 @@
+name: Deploy ComplianceOS to Alibaba Cloud ECS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # Log in to a container registry like Docker Hub or GitHub CR to push the image
+      # Or, alternatively, we can use a simpler approach: 
+      # Push code to ECS via SSH, then build and run docker-compose directly on the server.
+      
+      # We use the direct SSH approach which avoids needing a Docker Registry 
+      # and works well for single-node ECS deployments.
+      - name: Deploy to Alibaba Cloud ECS via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}     # e.g., 47.100.x.x
+          username: ${{ secrets.SERVER_USER }} # e.g., root
+          key: ${{ secrets.SERVER_SSH_KEY }}   # Private key of the server
+          port: ${{ secrets.SERVER_PORT || '22' }}
+          script: |
+            # Navigate to the target directory or create it
+            mkdir -p /opt/compliance-os
+            cd /opt/compliance-os
+            
+            # Fetch latest code
+            if [ -d ".git" ]; then
+              git pull origin main
+            else
+              git clone https://github.com/${{ github.repository }}.git .
+            fi
+            
+            # Write secrets to .env file for Docker to pick up
+            echo "ZHIPU_API_KEY=${{ secrets.ZHIPU_API_KEY }}" > .env
+            
+            # Ensure the persistence directory for SQLite exists
+            mkdir -p data
+            chmod 777 data # Avoid permission issues inside the container
+            
+            # Build and start Docker containers in detached mode
+            docker compose -f docker-compose.yml up --build -d
+            
+            # Prune old dangling images to save disk space
+            docker image prune -f

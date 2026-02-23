@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: compliance-os:latest
+    container_name: compliance-os-web
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=file:/app/data/prod.db # Direct SQLite to the mounted volume
+      # ZHIPU_API_KEY MUST be provided via .env file or GitHub Secrets during deployment
+      - ZHIPU_API_KEY=${ZHIPU_API_KEY} 
+    volumes:
+      # Mount the local ./data directory to the container's /app/data
+      # This ensures SQLite database persists across container restarts and updates
+      - ./data:/app/data
