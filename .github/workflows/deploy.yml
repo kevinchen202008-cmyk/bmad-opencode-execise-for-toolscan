@@ -14,26 +14,22 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # We can't build efficiently on the 2GB server. 
-      # Solution: Build the Docker image ON GITHUB ACTIONS (which has 7GB RAM and fast CPU)
-      # Then save it to a tar archive, scp it to the server, and load it.
-      # This completely bypasses the server memory limitations!
-      
+      # Build Docker image on GitHub Actions 
       - name: Build Docker Image Locally
         run: |
           docker build -t compliance-os-v2:latest .
-          docker save compliance-os-v2:latest -o compliance-os-v2.tar
-          # Fix permission issue where scp-action (running inside its own container) cannot read the tar file created by docker
-          chmod 644 compliance-os-v2.tar
+          # Compress the tar file to drastically reduce SCP transfer time and network usage
+          docker save compliance-os-v2:latest | gzip > compliance-os-v2.tar.gz
 
-      - name: Copy Docker Image to Server
+      # Upload via SCP
+      - name: Copy Compressed Docker Image to Server
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.ALIYUN_ECS_HOST }}
           username: ${{ secrets.ALIYUN_ECS_USER }}
           key: ${{ secrets.ALIYUN_ECS_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT || '22' }}
-          source: "compliance-os-v2.tar,docker-compose.yml"
+          source: "compliance-os-v2.tar.gz,docker-compose.yml"
           target: "/opt/compliance-os-v2"
           overwrite: true
 
@@ -43,17 +39,18 @@ jobs:
           host: ${{ secrets.ALIYUN_ECS_HOST }}
           username: ${{ secrets.ALIYUN_ECS_USER }}
           key: ${{ secrets.ALIYUN_ECS_SSH_KEY }}
-          command_timeout: 10m
+          command_timeout: 15m
           script: |
             set -e
             export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
             
             cd /opt/compliance-os-v2
             
-            # Load the image built by GitHub Actions
-            echo "Loading new Docker image..."
-            docker load -i compliance-os-v2.tar
-            rm compliance-os-v2.tar
+            # Load the compressed image
+            echo "Loading new compressed Docker image..."
+            # docker load supports reading directly from gzip
+            docker load -i compliance-os-v2.tar.gz
+            rm compliance-os-v2.tar.gz
             
             # Write secrets
             echo "ZHIPU_API_KEY=${{ secrets.ZHIPU_API_KEY }}" > .env
@@ -61,7 +58,7 @@ jobs:
             mkdir -p data
             chmod 777 data
             
-            # Restart container using the loaded image (no --build needed!)
+            # Restart container using the loaded image
             echo "Starting container..."
             if docker compose version >/dev/null 2>&1; then
               docker compose up -d
