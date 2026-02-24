@@ -47,29 +47,20 @@ jobs:
           host: ${{ secrets.ALIYUN_ECS_HOST }}
           username: ${{ secrets.ALIYUN_ECS_USER }}
           key: ${{ secrets.ALIYUN_ECS_SSH_KEY }}
-          # Force a strict timeout at the action level as well
           timeout: 5m
           command_timeout: 10m
           envs: IMAGE_NAME,ZHIPU_API_KEY,REGISTRY_PASSWORD,REGISTRY_URL,REGISTRY_USERNAME
           script: |
-            # Remove set -e to prevent silent aborts that might hang the SSH session
-            # set -e
-            
             export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
             
-            # Use strict redirect for ALL output to ensure we see exactly where it stops
-            exec 1> >(logger -s -t deploy-action) 2>&1
-            
-            echo "START: Preparing directory..."
+            echo "1. Preparing directory..."
             mkdir -p /opt/compliance-os-v2/data
             cd /opt/compliance-os-v2
             
-            echo "START: Logging into Aliyun Registry..."
-            # Attempt to login, if it hangs here, the echo below won't print
+            echo "2. Logging into Aliyun Registry..."
             echo "$REGISTRY_PASSWORD" | docker login "$REGISTRY_URL" -u "$REGISTRY_USERNAME" --password-stdin
-            echo "DONE: Logged into Registry."
             
-            echo "START: Creating docker-compose.yml..."
+            echo "3. Creating docker-compose.yml..."
             cat > docker-compose.yml << COMPOSE_EOF
             services:
               web:
@@ -87,20 +78,17 @@ jobs:
             COMPOSE_EOF
             
             chmod 777 /opt/compliance-os-v2/data
-            echo "DONE: Created docker-compose.yml"
             
-            echo "START: Pulling latest docker image..."
-            # Force non-interactive pulls to prevent TTY hangs
+            echo "4. Pulling and starting containers..."
+            # Using standard pull without -q so we can actually see if it hangs
             if docker compose version >/dev/null 2>&1; then
-              docker compose pull -q
-              echo "DONE: Pull complete. Starting containers..."
+              docker compose pull
               docker compose up -d
             else
-              docker-compose pull -q
-              echo "DONE: Pull complete. Starting containers..."
+              docker-compose pull
               docker-compose up -d
             fi
             
-            echo "START: Pruning old images..."
+            echo "5. Pruning old images..."
             docker image prune -f
             echo "✅ Deployment completed successfully!"
