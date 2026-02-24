@@ -34,47 +34,59 @@ jobs:
           push: true
           tags: ${{ env.IMAGE_NAME }}:latest
 
-      # Fallback to the exact SSH action logic that proved successful in your other repo
-      - name: Deploy to Alibaba Cloud ECS via SSH
+      - name: Create setup script
+        run: |
+          cat > setup.sh << 'EOF'
+          #!/bin/bash
+          set -e
+          export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
+          
+          mkdir -p /opt/compliance-os-v2/{data,config,logs}
+          cd /opt/compliance-os-v2
+          
+          docker login $1 -u $2 -p $3
+          
+          cat > docker-compose.yml << COMPOSE_EOF
+          services:
+            web:
+              image: $4:latest
+              container_name: compliance-os-v2-web
+              restart: always
+              ports:
+                - "3001:3000"
+              environment:
+                - NODE_ENV=production
+                - DATABASE_URL=file:/app/data/prod.db
+                - ZHIPU_API_KEY=$5
+              volumes:
+                - /opt/compliance-os-v2/data:/app/data
+          COMPOSE_EOF
+          
+          if docker compose version >/dev/null 2>&1; then
+            docker compose pull && docker compose up -d
+          else
+            docker-compose pull && docker-compose up -d
+          fi
+          
+          docker image prune -f
+          EOF
+
+      - name: Copy script to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.ALIYUN_ECS_HOST }}
+          username: ${{ secrets.ALIYUN_ECS_USER }}
+          key: ${{ secrets.ALIYUN_ECS_SSH_KEY }}
+          source: "setup.sh"
+          target: "/tmp"
+
+      - name: Execute script via SSH
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.ALIYUN_ECS_HOST }}
           username: ${{ secrets.ALIYUN_ECS_USER }}
           key: ${{ secrets.ALIYUN_ECS_SSH_KEY }}
           script: |
-            set -e
-            export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
-            
-            mkdir -p /opt/compliance-os-v2/{data,config,logs}
-            cd /opt/compliance-os-v2
-            
-            # The issue seems to be with trying to pass environment variables down via the Action's `envs` parameter
-            # which sometimes causes the SSH handshake to fail or reset the connection immediately.
-            # We revert to pure echo insertion for the compose file, which is robust and mimics your old repo exactly.
-            
-            cat > docker-compose.yml << 'COMPOSE_EOF'
-            services:
-              web:
-                image: ${{ env.IMAGE_NAME }}:latest
-                container_name: compliance-os-v2-web
-                restart: always
-                ports:
-                  - "3001:3000"
-                environment:
-                  - NODE_ENV=production
-                  - DATABASE_URL=file:/app/data/prod.db
-                  - ZHIPU_API_KEY=${{ secrets.ZHIPU_API_KEY }}
-                volumes:
-                  - /opt/compliance-os-v2/data:/app/data
-            COMPOSE_EOF
-            
-            # Force explicit login exactly like the old repo
-            docker login ${{ secrets.ALIYUN_REGISTRY }} -u ${{ secrets.ALIYUN_REGISTRY_USERNAME }} -p ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
-            
-            if docker compose version >/dev/null 2>&1; then
-              docker compose pull && docker compose up -d
-            else
-              docker-compose pull && docker-compose up -d
-            fi
-            
-            docker image prune -f
+            chmod +x /tmp/setup.sh
+            /tmp/setup.sh "${{ secrets.ALIYUN_REGISTRY }}" "${{ secrets.ALIYUN_REGISTRY_USERNAME }}" "${{ secrets.ALIYUN_REGISTRY_PASSWORD }}" "${{ env.IMAGE_NAME }}" "${{ secrets.ZHIPU_API_KEY }}"
+            rm /tmp/setup.sh
