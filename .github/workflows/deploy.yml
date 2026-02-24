@@ -6,6 +6,10 @@ on:
       - main
   workflow_dispatch:
 
+env:
+  # Construct the full image URL using the registry and namespace secrets
+  IMAGE_NAME: ${{ secrets.ALIYUN_REGISTRY }}/${{ secrets.ALIYUN_REGISTRY_NAMESPACE }}/compliance-os-v2
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -14,24 +18,22 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # Build Docker image on GitHub Actions 
-      - name: Build Docker Image Locally
-        run: |
-          docker build -t compliance-os-v2:latest .
-          # Compress the tar file to drastically reduce SCP transfer time and network usage
-          docker save compliance-os-v2:latest | gzip > compliance-os-v2.tar.gz
-
-      # Upload via SCP
-      - name: Copy Compressed Docker Image to Server
-        uses: appleboy/scp-action@v0.1.7
+      - name: Log in to Aliyun Container Registry
+        uses: docker/login-action@v3
         with:
-          host: ${{ secrets.ALIYUN_ECS_HOST }}
-          username: ${{ secrets.ALIYUN_ECS_USER }}
-          key: ${{ secrets.ALIYUN_ECS_SSH_KEY }}
-          port: ${{ secrets.SERVER_PORT || '22' }}
-          source: "compliance-os-v2.tar.gz,docker-compose.yml"
-          target: "/opt/compliance-os-v2"
-          overwrite: true
+          registry: ${{ secrets.ALIYUN_REGISTRY }}
+          username: ${{ secrets.ALIYUN_REGISTRY_USERNAME }}
+          password: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ env.IMAGE_NAME }}:latest
 
       - name: Deploy to Alibaba Cloud ECS via SSH
         uses: appleboy/ssh-action@v1.0.0
@@ -39,31 +41,43 @@ jobs:
           host: ${{ secrets.ALIYUN_ECS_HOST }}
           username: ${{ secrets.ALIYUN_ECS_USER }}
           key: ${{ secrets.ALIYUN_ECS_SSH_KEY }}
-          command_timeout: 15m
           script: |
             set -e
             export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
             
+            # Isolated directory specifically for this project version
+            mkdir -p /opt/compliance-os-v2/{data,config}
             cd /opt/compliance-os-v2
             
-            # Load the compressed image
-            echo "Loading new compressed Docker image..."
-            # docker load supports reading directly from gzip
-            docker load -i compliance-os-v2.tar.gz
-            rm compliance-os-v2.tar.gz
+            # Login to Aliyun Registry on the ECS server
+            docker login ${{ secrets.ALIYUN_REGISTRY }} -u ${{ secrets.ALIYUN_REGISTRY_USERNAME }} -p ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
             
-            # Write secrets
-            echo "ZHIPU_API_KEY=${{ secrets.ZHIPU_API_KEY }}" > .env
+            # Create docker-compose.yml dynamically on the server
+            cat > docker-compose.yml << 'COMPOSE_EOF'
+            services:
+              web:
+                image: ${{ env.IMAGE_NAME }}:latest
+                container_name: compliance-os-v2-web
+                restart: always
+                ports:
+                  - "3001:3000"
+                environment:
+                  - NODE_ENV=production
+                  - DATABASE_URL=file:/app/data/prod.db
+                  - ZHIPU_API_KEY=${{ secrets.ZHIPU_API_KEY }}
+                volumes:
+                  - /opt/compliance-os-v2/data:/app/data
+            COMPOSE_EOF
             
-            mkdir -p data
-            chmod 777 data
+            # Ensure the persistence directory for SQLite exists and has permissions
+            chmod 777 /opt/compliance-os-v2/data
             
-            # Restart container using the loaded image
-            echo "Starting container..."
+            # Pull the latest image using Aliyun internal network for maximum speed
             if docker compose version >/dev/null 2>&1; then
-              docker compose up -d
+              docker compose pull && docker compose up -d
             else
-              docker-compose up -d
+              docker-compose pull && docker-compose up -d
             fi
             
+            # Prune old dangling images to save disk space
             docker image prune -f
