@@ -37,29 +37,35 @@ jobs:
 
       - name: Deploy to Alibaba Cloud ECS via SSH
         uses: appleboy/ssh-action@v1.0.0
+        # Pass the environment variables explicitly so the SSH script can use them
+        env:
+          IMAGE_NAME: ${{ env.IMAGE_NAME }}
+          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
+          REGISTRY_PASSWORD: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
+          REGISTRY_URL: ${{ secrets.ALIYUN_REGISTRY }}
+          REGISTRY_USERNAME: ${{ secrets.ALIYUN_REGISTRY_USERNAME }}
         with:
           host: ${{ secrets.ALIYUN_ECS_HOST }}
           username: ${{ secrets.ALIYUN_ECS_USER }}
           key: ${{ secrets.ALIYUN_ECS_SSH_KEY }}
-          # Add timeout to prevent silent hangs
           command_timeout: 15m
+          envs: IMAGE_NAME,ZHIPU_API_KEY,REGISTRY_PASSWORD,REGISTRY_URL,REGISTRY_USERNAME
           script: |
             set -e
             export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
             
-            # Isolated directory specifically for this project version
+            echo "1. Preparing directory..."
             mkdir -p /opt/compliance-os-v2/data
             cd /opt/compliance-os-v2
             
-            # Login to Aliyun Registry on the ECS server
-            # Using --password-stdin to avoid hanging on prompt and warnings
-            echo "${{ secrets.ALIYUN_REGISTRY_PASSWORD }}" | docker login ${{ secrets.ALIYUN_REGISTRY }} -u "${{ secrets.ALIYUN_REGISTRY_USERNAME }}" --password-stdin
+            echo "2. Logging into Aliyun Registry..."
+            echo "$REGISTRY_PASSWORD" | docker login "$REGISTRY_URL" -u "$REGISTRY_USERNAME" --password-stdin
             
-            # Create docker-compose.yml dynamically on the server
-            cat > docker-compose.yml << 'COMPOSE_EOF'
+            echo "3. Creating docker-compose.yml..."
+            cat > docker-compose.yml << COMPOSE_EOF
             services:
               web:
-                image: ${{ env.IMAGE_NAME }}:latest
+                image: $IMAGE_NAME:latest
                 container_name: compliance-os-v2-web
                 restart: always
                 ports:
@@ -67,25 +73,22 @@ jobs:
                 environment:
                   - NODE_ENV=production
                   - DATABASE_URL=file:/app/data/prod.db
-                  - ZHIPU_API_KEY=${{ secrets.ZHIPU_API_KEY }}
+                  - ZHIPU_API_KEY=$ZHIPU_API_KEY
                 volumes:
                   - /opt/compliance-os-v2/data:/app/data
             COMPOSE_EOF
             
-            # Ensure the persistence directory for SQLite exists and has permissions
             chmod 777 /opt/compliance-os-v2/data
             
-            # Pull the latest image
-            echo "Pulling latest docker image..."
+            echo "4. Pulling and starting containers..."
             if docker compose version >/dev/null 2>&1; then
               docker compose pull
-              echo "Starting containers..."
               docker compose up -d
             else
               docker-compose pull
-              echo "Starting containers..."
               docker-compose up -d
             fi
             
-            # Prune old dangling images to save disk space
+            echo "5. Pruning old images..."
             docker image prune -f
+            echo "✅ Deployment completed successfully!"
