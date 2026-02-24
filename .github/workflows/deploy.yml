@@ -34,18 +34,17 @@ jobs:
           push: true
           tags: ${{ env.IMAGE_NAME }}:latest
 
-      - name: Install SSH Key
-        uses: shimataro/ssh-key-action@v2
+      - name: Deploy via Tailscale/ZeroTier alternative (webfactory/ssh-agent)
+        uses: webfactory/ssh-agent@v0.9.0
         with:
-          key: ${{ secrets.ALIYUN_ECS_SSH_KEY }}
-          known_hosts: 'just-a-placeholder-so-we-dont-fail'
-          
-      - name: Strict Host Key Checking bypass
+          ssh-private-key: ${{ secrets.ALIYUN_ECS_SSH_KEY }}
+
+      - name: Add remote server to known hosts
         run: |
           mkdir -p ~/.ssh
-          echo "StrictHostKeyChecking no" >> ~/.ssh/config
+          ssh-keyscan -H ${{ secrets.ALIYUN_ECS_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Deploy natively via SSH
+      - name: Deploy natively via SSH (Minimal Connect)
         env:
           HOST: ${{ secrets.ALIYUN_ECS_HOST }}
           USER: ${{ secrets.ALIYUN_ECS_USER }}
@@ -55,8 +54,8 @@ jobs:
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
           IMAGE_NAME: ${{ env.IMAGE_NAME }}
         run: |
-          # Use ssh with -o ServerAliveInterval to keep connection alive and -v for verbose debug
-          SSH_CMD="ssh -v -o ServerAliveInterval=60 -o ServerAliveCountMax=3 $USER@$HOST"
+          # Use ssh with legacy ciphers to prevent kex_exchange_identification error on some Aliyun Ubuntu variants
+          SSH_CMD="ssh -o KexAlgorithms=+diffie-hellman-group14-sha1,diffie-hellman-group-exchange-sha1,diffie-hellman-group1-sha1 -o HostKeyAlgorithms=+ssh-rsa,ssh-dss -o PubkeyAcceptedKeyTypes=+ssh-rsa $USER@$HOST"
           
           # 1. SSH in and create directories
           echo "=== 1. Creating directories ==="
