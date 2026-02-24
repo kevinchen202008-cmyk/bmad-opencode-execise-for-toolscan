@@ -34,22 +34,52 @@ jobs:
           push: true
           tags: ${{ env.IMAGE_NAME }}:latest
 
-      - name: Create setup script
+      - name: Deploy natively via raw SSH without third-party actions
+        env:
+          HOST: ${{ secrets.ALIYUN_ECS_HOST }}
+          USER: ${{ secrets.ALIYUN_ECS_USER }}
+          SSH_KEY: ${{ secrets.ALIYUN_ECS_SSH_KEY }}
+          REGISTRY: ${{ secrets.ALIYUN_REGISTRY }}
+          USERNAME: ${{ secrets.ALIYUN_REGISTRY_USERNAME }}
+          PASSWORD: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
+          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
+          IMAGE_NAME: ${{ env.IMAGE_NAME }}
         run: |
-          cat > setup.sh << 'EOF'
-          #!/bin/bash
-          set -e
-          export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
+          # 1. Setup SSH Identity directly on the GitHub runner
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
           
-          mkdir -p /opt/compliance-os-v2/{data,config,logs}
-          cd /opt/compliance-os-v2
+          # Disable strict host key checking and use ServerAliveInterval to prevent disconnects
+          echo "Host $HOST" > ~/.ssh/config
+          echo "  StrictHostKeyChecking no" >> ~/.ssh/config
+          echo "  UserKnownHostsFile /dev/null" >> ~/.ssh/config
+          echo "  ServerAliveInterval 30" >> ~/.ssh/config
+          echo "  ServerAliveCountMax 10" >> ~/.ssh/config
+          echo "  ConnectTimeout 15" >> ~/.ssh/config
+          chmod 600 ~/.ssh/config
+
+          # 2. Execute everything in a single, robust SSH command
+          echo "Connecting to Aliyun ECS..."
           
-          docker login $1 -u $2 -p $3
-          
-          cat > docker-compose.yml << COMPOSE_EOF
+          ssh -i ~/.ssh/id_rsa -o LogLevel=ERROR $USER@$HOST << REMOTE_SCRIPT
+            set -e
+            echo "Successfully connected!"
+            export PATH="/usr/local/bin:/usr/bin:/bin:\$PATH"
+            
+            # Setup directory
+            mkdir -p /opt/compliance-os-v2/{data,config,logs}
+            cd /opt/compliance-os-v2
+            chmod 777 data
+            
+            echo "Logging into Aliyun ACR..."
+            echo "$PASSWORD" | docker login "$REGISTRY" -u "$USERNAME" --password-stdin
+            
+            echo "Generating docker-compose.yml..."
+            cat > docker-compose.yml << COMPOSE_EOF
           services:
             web:
-              image: $4:latest
+              image: $IMAGE_NAME:latest
               container_name: compliance-os-v2-web
               restart: always
               ports:
@@ -57,63 +87,22 @@ jobs:
               environment:
                 - NODE_ENV=production
                 - DATABASE_URL=file:/app/data/prod.db
-                - ZHIPU_API_KEY=$5
+                - ZHIPU_API_KEY=$ZHIPU_API_KEY
               volumes:
                 - /opt/compliance-os-v2/data:/app/data
           COMPOSE_EOF
-          
-          if docker compose version >/dev/null 2>&1; then
-            docker compose pull && docker compose up -d
-          else
-            docker-compose pull && docker-compose up -d
-          fi
-          
-          docker image prune -f
-          EOF
-
-      - name: Execute script via SSH
-        uses: appleboy/ssh-action@master
-        with:
-          host: ${{ secrets.ALIYUN_ECS_HOST }}
-          username: ${{ secrets.ALIYUN_ECS_USER }}
-          key: ${{ secrets.ALIYUN_ECS_SSH_KEY }}
-          port: ${{ secrets.SERVER_PORT || '22' }}
-          script_stop: true
-          script: |
-            export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
-            mkdir -p /opt/compliance-os-v2/{data,config,logs}
-            cd /opt/compliance-os-v2
             
-            cat > setup.sh << 'SCRIPT_EOF'
-            #!/bin/bash
-            set -e
-            export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
-            docker login ${{ secrets.ALIYUN_REGISTRY }} -u ${{ secrets.ALIYUN_REGISTRY_USERNAME }} -p ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
-            
-            cat > docker-compose.yml << 'COMPOSE_EOF'
-            services:
-              web:
-                image: ${{ env.IMAGE_NAME }}:latest
-                container_name: compliance-os-v2-web
-                restart: always
-                ports:
-                  - "3001:3000"
-                environment:
-                  - NODE_ENV=production
-                  - DATABASE_URL=file:/app/data/prod.db
-                  - ZHIPU_API_KEY=${{ secrets.ZHIPU_API_KEY }}
-                volumes:
-                  - /opt/compliance-os-v2/data:/app/data
-            COMPOSE_EOF
-            
+            echo "Pulling latest image and restarting container..."
             if docker compose version >/dev/null 2>&1; then
-              docker compose pull && docker compose up -d
+              docker compose pull
+              docker compose up -d
             else
-              docker-compose pull && docker-compose up -d
+              docker-compose pull
+              docker-compose up -d
             fi
-            docker image prune -f
-            SCRIPT_EOF
             
-            chmod +x setup.sh
-            ./setup.sh
-            rm setup.sh
+            docker image prune -f
+            echo "Deployment finished on server!"
+          REMOTE_SCRIPT
+          
+          echo "Action completed successfully!"
