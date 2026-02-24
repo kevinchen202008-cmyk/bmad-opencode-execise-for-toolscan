@@ -14,23 +14,19 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # Log in to a container registry like Docker Hub or GitHub CR to push the image
-      # Or, alternatively, we can use a simpler approach: 
-      # Push code to ECS via SSH, then build and run docker-compose directly on the server.
-      
-      # We use the direct SSH approach which avoids needing a Docker Registry 
-      # and works well for single-node ECS deployments.
+      # Using the exact same SSH Action and version that works in your other repo
       - name: Deploy to Alibaba Cloud ECS via SSH
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@v1.0.0
         with:
-          # Using the exact same secret names from your older repository 
-          # to allow you to easily copy/paste or use Organization secrets.
           host: ${{ secrets.ALIYUN_ECS_HOST }}
           username: ${{ secrets.ALIYUN_ECS_USER }}
+          # The key structure is identical, meaning the issue is highly likely 
+          # that the ALIYUN_ECS_SSH_KEY string in THIS repo's secrets is either missing or malformed
           key: ${{ secrets.ALIYUN_ECS_SSH_KEY }}
-          port: ${{ secrets.SERVER_PORT || '22' }}
           script: |
-            # Navigate to the target directory or create it
+            set -e
+            export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
+            
             # Isolated directory specifically for this project version
             mkdir -p /opt/compliance-os-v2
             cd /opt/compliance-os-v2
@@ -50,7 +46,11 @@ jobs:
             chmod 777 data # Avoid permission issues inside the container
             
             # Build and start Docker containers in detached mode
-            docker compose -f docker-compose.yml up --build -d
+            if docker compose version >/dev/null 2>&1; then
+              docker compose -f docker-compose.yml up --build -d
+            else
+              docker-compose -f docker-compose.yml up --build -d
+            fi
             
             # Prune old dangling images to save disk space
             docker image prune -f
