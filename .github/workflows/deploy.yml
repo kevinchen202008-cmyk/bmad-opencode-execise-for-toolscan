@@ -34,9 +34,6 @@ jobs:
           push: true
           tags: ${{ env.IMAGE_NAME }}:latest
 
-      # In GitHub Actions, some SSH/SCP clients have trouble with ED25519 or older RSA keys,
-      # or they get blocked by the server's overly aggressive SSH rate limiting (MaxStartups/MaxAuthTries).
-      # The webfactory/ssh-agent creates a real SSH tunnel context that is much more resilient.
       - name: Install SSH Key
         uses: shimataro/ssh-key-action@v2
         with:
@@ -48,7 +45,6 @@ jobs:
           mkdir -p ~/.ssh
           echo "StrictHostKeyChecking no" >> ~/.ssh/config
 
-      # Run the deployment using native ssh commands instead of external actions which hide connection reset errors
       - name: Deploy natively via SSH
         env:
           HOST: ${{ secrets.ALIYUN_ECS_HOST }}
@@ -59,11 +55,16 @@ jobs:
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
           IMAGE_NAME: ${{ env.IMAGE_NAME }}
         run: |
-          # 1. SSH in and create directories
-          ssh $USER@$HOST "mkdir -p /opt/compliance-os-v2/{data,config,logs}"
+          # Use ssh with -o ServerAliveInterval to keep connection alive and -v for verbose debug
+          SSH_CMD="ssh -v -o ServerAliveInterval=60 -o ServerAliveCountMax=3 $USER@$HOST"
           
-          # 2. SSH in, generate docker-compose.yml and pull
-          ssh $USER@$HOST "cat > /opt/compliance-os-v2/docker-compose.yml" << EOF
+          # 1. SSH in and create directories
+          echo "=== 1. Creating directories ==="
+          $SSH_CMD "mkdir -p /opt/compliance-os-v2/{data,config,logs}"
+          
+          # 2. SSH in, generate docker-compose.yml
+          echo "=== 2. Generating docker-compose.yml ==="
+          $SSH_CMD "cat > /opt/compliance-os-v2/docker-compose.yml" << EOF
           services:
             web:
               image: $IMAGE_NAME:latest
@@ -80,7 +81,8 @@ jobs:
           EOF
           
           # 3. Final SSH to execute docker commands
-          ssh $USER@$HOST "
+          echo "=== 3. Pulling and deploying containers ==="
+          $SSH_CMD "
             set -e
             cd /opt/compliance-os-v2
             chmod 777 data
