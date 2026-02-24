@@ -33,8 +33,6 @@ jobs:
         with:
           context: .
           push: true
-          # Note: we use tag 'v2' to distinguish from your old project's 'latest' if they share the same repo name!
-          # Or if ALIYUN_REGISTRY_REPO is meant to be a brand new repo name for this project, you can use :latest
           tags: ${{ env.IMAGE_NAME }}:latest
 
       - name: Deploy to Alibaba Cloud ECS via SSH
@@ -43,16 +41,19 @@ jobs:
           host: ${{ secrets.ALIYUN_ECS_HOST }}
           username: ${{ secrets.ALIYUN_ECS_USER }}
           key: ${{ secrets.ALIYUN_ECS_SSH_KEY }}
+          # Add timeout to prevent silent hangs
+          command_timeout: 15m
           script: |
             set -e
             export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
             
             # Isolated directory specifically for this project version
-            mkdir -p /opt/compliance-os-v2/{data,config}
+            mkdir -p /opt/compliance-os-v2/data
             cd /opt/compliance-os-v2
             
             # Login to Aliyun Registry on the ECS server
-            docker login ${{ secrets.ALIYUN_REGISTRY }} -u "${{ secrets.ALIYUN_REGISTRY_USERNAME }}" -p "${{ secrets.ALIYUN_REGISTRY_PASSWORD }}"
+            # Using --password-stdin to avoid hanging on prompt and warnings
+            echo "${{ secrets.ALIYUN_REGISTRY_PASSWORD }}" | docker login ${{ secrets.ALIYUN_REGISTRY }} -u "${{ secrets.ALIYUN_REGISTRY_USERNAME }}" --password-stdin
             
             # Create docker-compose.yml dynamically on the server
             cat > docker-compose.yml << 'COMPOSE_EOF'
@@ -75,10 +76,15 @@ jobs:
             chmod 777 /opt/compliance-os-v2/data
             
             # Pull the latest image
+            echo "Pulling latest docker image..."
             if docker compose version >/dev/null 2>&1; then
-              docker compose pull && docker compose up -d
+              docker compose pull
+              echo "Starting containers..."
+              docker compose up -d
             else
-              docker-compose pull && docker-compose up -d
+              docker-compose pull
+              echo "Starting containers..."
+              docker-compose up -d
             fi
             
             # Prune old dangling images to save disk space
