@@ -7,8 +7,8 @@ on:
   workflow_dispatch:
 
 env:
-  # Construct the full image URL using the registry and namespace secrets
-  IMAGE_NAME: ${{ secrets.ALIYUN_REGISTRY }}/${{ secrets.ALIYUN_REGISTRY_NAMESPACE }}/compliance-os-v2
+  # Construct the full image URL using the exact same structure as your old project
+  IMAGE_NAME: ${{ secrets.ALIYUN_REGISTRY }}/${{ secrets.ALIYUN_REGISTRY_NAMESPACE }}/${{ secrets.ALIYUN_REGISTRY_REPO }}
 
 jobs:
   build-and-deploy:
@@ -33,6 +33,8 @@ jobs:
         with:
           context: .
           push: true
+          # Note: we use tag 'v2' to distinguish from your old project's 'latest' if they share the same repo name!
+          # Or if ALIYUN_REGISTRY_REPO is meant to be a brand new repo name for this project, you can use :latest
           tags: ${{ env.IMAGE_NAME }}:latest
 
       - name: Deploy to Alibaba Cloud ECS via SSH
@@ -50,7 +52,7 @@ jobs:
             cd /opt/compliance-os-v2
             
             # Login to Aliyun Registry on the ECS server
-            docker login ${{ secrets.ALIYUN_REGISTRY }} -u ${{ secrets.ALIYUN_REGISTRY_USERNAME }} -p ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
+            docker login ${{ secrets.ALIYUN_REGISTRY }} -u "${{ secrets.ALIYUN_REGISTRY_USERNAME }}" -p "${{ secrets.ALIYUN_REGISTRY_PASSWORD }}"
             
             # Create docker-compose.yml dynamically on the server
             cat > docker-compose.yml << 'COMPOSE_EOF'
@@ -72,7 +74,7 @@ jobs:
             # Ensure the persistence directory for SQLite exists and has permissions
             chmod 777 /opt/compliance-os-v2/data
             
-            # Pull the latest image using Aliyun internal network for maximum speed
+            # Pull the latest image
             if docker compose version >/dev/null 2>&1; then
               docker compose pull && docker compose up -d
             else
