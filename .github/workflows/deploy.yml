@@ -7,7 +7,6 @@ on:
   workflow_dispatch:
 
 env:
-  # Construct the full image URL using the exact same structure as your old project
   IMAGE_NAME: ${{ secrets.ALIYUN_REGISTRY }}/${{ secrets.ALIYUN_REGISTRY_NAMESPACE }}/${{ secrets.ALIYUN_REGISTRY_REPO }}
 
 jobs:
@@ -35,36 +34,28 @@ jobs:
           push: true
           tags: ${{ env.IMAGE_NAME }}:latest
 
+      # Fallback to the exact SSH action logic that proved successful in your other repo
       - name: Deploy to Alibaba Cloud ECS via SSH
         uses: appleboy/ssh-action@v1.0.0
-        env:
-          IMAGE_NAME: ${{ env.IMAGE_NAME }}
-          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
-          REGISTRY_PASSWORD: ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
-          REGISTRY_URL: ${{ secrets.ALIYUN_REGISTRY }}
-          REGISTRY_USERNAME: ${{ secrets.ALIYUN_REGISTRY_USERNAME }}
         with:
           host: ${{ secrets.ALIYUN_ECS_HOST }}
           username: ${{ secrets.ALIYUN_ECS_USER }}
           key: ${{ secrets.ALIYUN_ECS_SSH_KEY }}
-          timeout: 5m
-          command_timeout: 10m
-          envs: IMAGE_NAME,ZHIPU_API_KEY,REGISTRY_PASSWORD,REGISTRY_URL,REGISTRY_USERNAME
           script: |
+            set -e
             export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
             
-            echo "1. Preparing directory..."
-            mkdir -p /opt/compliance-os-v2/data
+            mkdir -p /opt/compliance-os-v2/{data,config,logs}
             cd /opt/compliance-os-v2
             
-            echo "2. Logging into Aliyun Registry..."
-            echo "$REGISTRY_PASSWORD" | docker login "$REGISTRY_URL" -u "$REGISTRY_USERNAME" --password-stdin
+            # The issue seems to be with trying to pass environment variables down via the Action's `envs` parameter
+            # which sometimes causes the SSH handshake to fail or reset the connection immediately.
+            # We revert to pure echo insertion for the compose file, which is robust and mimics your old repo exactly.
             
-            echo "3. Creating docker-compose.yml..."
-            cat > docker-compose.yml << COMPOSE_EOF
+            cat > docker-compose.yml << 'COMPOSE_EOF'
             services:
               web:
-                image: $IMAGE_NAME:latest
+                image: ${{ env.IMAGE_NAME }}:latest
                 container_name: compliance-os-v2-web
                 restart: always
                 ports:
@@ -72,23 +63,18 @@ jobs:
                 environment:
                   - NODE_ENV=production
                   - DATABASE_URL=file:/app/data/prod.db
-                  - ZHIPU_API_KEY=$ZHIPU_API_KEY
+                  - ZHIPU_API_KEY=${{ secrets.ZHIPU_API_KEY }}
                 volumes:
                   - /opt/compliance-os-v2/data:/app/data
             COMPOSE_EOF
             
-            chmod 777 /opt/compliance-os-v2/data
+            # Force explicit login exactly like the old repo
+            docker login ${{ secrets.ALIYUN_REGISTRY }} -u ${{ secrets.ALIYUN_REGISTRY_USERNAME }} -p ${{ secrets.ALIYUN_REGISTRY_PASSWORD }}
             
-            echo "4. Pulling and starting containers..."
-            # Using standard pull without -q so we can actually see if it hangs
             if docker compose version >/dev/null 2>&1; then
-              docker compose pull
-              docker compose up -d
+              docker compose pull && docker compose up -d
             else
-              docker-compose pull
-              docker-compose up -d
+              docker-compose pull && docker-compose up -d
             fi
             
-            echo "5. Pruning old images..."
             docker image prune -f
-            echo "✅ Deployment completed successfully!"
