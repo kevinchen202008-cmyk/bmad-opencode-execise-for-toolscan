@@ -1,0 +1,29 @@
+name: Emergency Server Cleanup
+
+on:
+  workflow_dispatch:
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: SSH into Server and Clean Docker
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.ALIYUN_ECS_HOST }}
+          username: ${{ secrets.ALIYUN_ECS_USER }}
+          key: ${{ secrets.ALIYUN_ECS_SSH_KEY }}
+          script: |
+            echo "🚀 Starting Emergency Server Cleanup..."
+            
+            echo "1/3 Stopping and removing ALL running Docker containers..."
+            docker rm -f $(docker ps -aq) 2>/dev/null || true
+            
+            echo "2/3 Pruning all unused Docker images, networks, and build cache..."
+            docker system prune -a -f --volumes
+            
+            echo "3/3 Dropping system caches to free up RAM..."
+            sync; echo 3 > /proc/sys/vm/drop_caches
+            
+            echo "✅ Cleanup Complete! Server RAM and Disk are now fresh."
