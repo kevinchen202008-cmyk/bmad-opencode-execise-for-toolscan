@@ -14,45 +14,56 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # Using the exact same SSH Action and version that works in your other repo
+      # We can't build efficiently on the 2GB server. 
+      # Solution: Build the Docker image ON GITHUB ACTIONS (which has 7GB RAM and fast CPU)
+      # Then save it to a tar archive, scp it to the server, and load it.
+      # This completely bypasses the server memory limitations!
+      
+      - name: Build Docker Image Locally
+        run: |
+          docker build -t compliance-os-v2:latest .
+          docker save compliance-os-v2:latest -o compliance-os-v2.tar
+
+      - name: Copy Docker Image to Server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.ALIYUN_ECS_HOST }}
+          username: ${{ secrets.ALIYUN_ECS_USER }}
+          key: ${{ secrets.ALIYUN_ECS_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT || '22' }}
+          source: "compliance-os-v2.tar,docker-compose.yml"
+          target: "/opt/compliance-os-v2"
+
       - name: Deploy to Alibaba Cloud ECS via SSH
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.ALIYUN_ECS_HOST }}
           username: ${{ secrets.ALIYUN_ECS_USER }}
-          # The key structure is identical, meaning the issue is highly likely 
-          # that the ALIYUN_ECS_SSH_KEY string in THIS repo's secrets is either missing or malformed
           key: ${{ secrets.ALIYUN_ECS_SSH_KEY }}
-          # Increase command timeout to prevent docker build from timing out on 2G memory instances
-          command_timeout: 30m
+          command_timeout: 10m
           script: |
             set -e
             export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
             
-            # Isolated directory specifically for this project version
-            mkdir -p /opt/compliance-os-v2
             cd /opt/compliance-os-v2
             
-            # Fetch latest code
-            if [ -d ".git" ]; then
-              git pull origin main
-            else
-              git clone https://github.com/${{ github.repository }}.git .
-            fi
+            # Load the image built by GitHub Actions
+            echo "Loading new Docker image..."
+            docker load -i compliance-os-v2.tar
+            rm compliance-os-v2.tar
             
-            # Write secrets to .env file for Docker to pick up
+            # Write secrets
             echo "ZHIPU_API_KEY=${{ secrets.ZHIPU_API_KEY }}" > .env
             
-            # Ensure the persistence directory for SQLite exists
             mkdir -p data
-            chmod 777 data # Avoid permission issues inside the container
+            chmod 777 data
             
-            # Build and start Docker containers in detached mode
+            # Restart container using the loaded image (no --build needed!)
+            echo "Starting container..."
             if docker compose version >/dev/null 2>&1; then
-              docker compose -f docker-compose.yml up --build -d
+              docker compose up -d
             else
-              docker-compose -f docker-compose.yml up --build -d
+              docker-compose up -d
             fi
             
-            # Prune old dangling images to save disk space
             docker image prune -f
