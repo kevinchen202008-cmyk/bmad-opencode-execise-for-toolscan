@@ -23,6 +23,8 @@ jobs:
         run: |
           docker build -t compliance-os-v2:latest .
           docker save compliance-os-v2:latest -o compliance-os-v2.tar
+          # Fix permission issue where scp-action (running inside its own container) cannot read the tar file created by docker
+          chmod 644 compliance-os-v2.tar
 
       - name: Copy Docker Image to Server
         uses: appleboy/scp-action@v0.1.7
@@ -33,6 +35,7 @@ jobs:
           port: ${{ secrets.SERVER_PORT || '22' }}
           source: "compliance-os-v2.tar,docker-compose.yml"
           target: "/opt/compliance-os-v2"
+          overwrite: true
 
       - name: Deploy to Alibaba Cloud ECS via SSH
         uses: appleboy/ssh-action@v1.0.0
