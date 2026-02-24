@@ -23,6 +23,8 @@ jobs:
           # The key structure is identical, meaning the issue is highly likely 
           # that the ALIYUN_ECS_SSH_KEY string in THIS repo's secrets is either missing or malformed
           key: ${{ secrets.ALIYUN_ECS_SSH_KEY }}
+          # Increase command timeout to prevent docker build from timing out on 2G memory instances
+          command_timeout: 30m
           script: |
             set -e
             export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
